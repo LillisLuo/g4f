@@ -19,34 +19,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class GPT4FreeService:
-    def _get_image_models(self) -> Dict[str, Any]:
-        """Get available image generation models"""
-        image_models = {
-            # Flux Models
-            'flux': {'name': 'Flux', 'providers': ['ARTA', 'Blackbox', 'PollinationsImage']},
-            'flux-dev': {'name': 'Flux Dev', 'providers': ['ARTA', 'PollinationsImage', 'HuggingSpace']},
-            'flux-pro': {'name': 'Flux Pro', 'providers': ['ARTA']},
-            'flux-schnell': {'name': 'Flux Schnell', 'providers': ['PollinationsImage', 'HuggingSpace']},
-            
-            # Stable Diffusion Models
-            'sdxl-1.0': {'name': 'Stable Diffusion XL 1.0', 'providers': ['ARTA']},
-            'sd-3.5': {'name': 'Stable Diffusion 3.5', 'providers': ['HuggingSpace', 'HuggingFace']},
-            
-            # DALL-E Models
-            'dalle': {'name': 'DALL-E', 'providers': ['Bing', 'DallE']},
-            'dalle-3': {'name': 'DALL-E 3', 'providers': ['Bing', 'OpenaiChat']},
-            'dalle-mini': {'name': 'DALL-E Mini', 'providers': ['DallEMini', 'Craiyon']},
-            
-            # Other Models
-            'midjourney': {'name': 'Midjourney', 'providers': ['DeepAI']},
-            'gpt-image': {'name': 'GPT Image', 'providers': ['ARTA']},
-            'sdxl-l': {'name': 'Stable Diffusion XL Large', 'providers': ['ARTA']},
-            
-            # Default/Generic
-            'default': {'name': 'Default Model', 'providers': ['*']}
-        }
-        return image_models
-    
     def __init__(self):
         self.providers = self._get_available_providers()
         self.models = self._get_available_models()
@@ -59,24 +31,14 @@ class GPT4FreeService:
         """Get available providers from g4f"""
         providers = {}
         try:
-            # Comprehensive list of providers that don't require auth
+            # Providers that support text generation (based on your table)
             provider_list = [
-                # Most reliable providers
-                'Blackbox', 'DDG', 'ChatGpt', 'ChatGptEs', 'DeepInfraChat',
-                'Copilot', 'You', 'Aichat', 'ChatBase', 'FreeGpt', 
-                'GPTalk', 'Liaobots', 'Phind', 'Yqcloud', 'Bing',
-                
-                # Additional no-auth providers
-                'ChatGLM', 'Cloudflare', 'Dynaspark', 'DocsBot',
-                'Free2GPT', 'LambdaChat', 'PollinationsAI', 'PuterJS',
-                'WeWordle', 'Chatai', 'OpenaiChat', 
-                
-                # More providers
-                'OIVSCodeSer2', 'OIVSCodeSer5', 'OIVSCodeSer0501',
-                'AllenAI', 'ARTA', 'Blackboxapi',
-                
-                # Vision capable providers
-                'GeminiPro', 'HuggingChat', 'HuggingFace'
+                'Blackbox', 'Blackboxapi', 'Chatai', 'ChatGLM', 'Cloudflare',
+                'DeepInfraChat', 'DocsBot', 'Free2GPT', 'FreeGpt', 'GizAI',
+                'LambdaChat', 'LegacyLMArena', 'OIVSCodeSer2', 'OIVSCodeSer5',
+                'OIVSCodeSer0501', 'PerplexityLabs', 'TeachAnything', 'WeWordle',
+                'Yqcloud', 'Websim', 'Copilot', 'HuggingSpace', 'PollinationsAI',
+                'Together'
             ]
             
             for provider_name in provider_list:
@@ -102,33 +64,23 @@ class GPT4FreeService:
         """Get available image generation providers"""
         image_providers = {}
         try:
-            # Comprehensive list of image providers (no auth required)
+            # Providers that support image generation (based on your table)
             image_provider_list = [
-                # Primary image providers
-                'ARTA', 'Blackbox', 'PollinationsImage', 
-                'HuggingSpace', 'HuggingFace',
-                
-                # Legacy but might work
-                'Bing', 'BingCreateImages', 'DeepAI', 
-                'Craiyon', 'DallE', 'DallEMini', 
-                'Prodia', 'PixArt',
-                
-                # Additional providers
-                'DeepInfraImage', 'PollinationsAI'
+                'ImageLabs', 'PollinationsImage', 'ARTA', 'HuggingSpace',
+                'PollinationsAI', 'Together'
             ]
             
             for provider_name in image_provider_list:
                 try:
                     if hasattr(g4f.Provider, provider_name):
                         provider = getattr(g4f.Provider, provider_name)
-                        # Check if provider supports image generation
-                        if hasattr(provider, 'supports_image_generation') or provider_name in ['Bing', 'BingCreateImages', 'DeepAI']:
-                            image_providers[provider_name] = {
-                                'name': provider_name,
-                                'working': True,
-                                'supports_models': getattr(provider, 'image_models', ['default']),
-                                'url': getattr(provider, 'url', '')
-                            }
+                        image_providers[provider_name] = {
+                            'name': provider_name,
+                            'working': True,
+                            'supports_image': True,
+                            'supports_models': getattr(provider, 'image_models', ['default']),
+                            'url': getattr(provider, 'url', '')
+                        }
                 except Exception as e:
                     logger.warning(f"Image provider {provider_name} not available: {e}")
                     continue
@@ -139,100 +91,185 @@ class GPT4FreeService:
     
     def _get_available_models(self) -> Dict[str, Any]:
         """Get available models from g4f"""
-        models = {
-            # GPT Models
-            'gpt-3.5-turbo': {'name': 'GPT-3.5 Turbo', 'base_provider': 'OpenAI', 'best_provider': ''},
-            'gpt-4': {'name': 'GPT-4', 'base_provider': 'OpenAI', 'best_provider': ''},
-            'gpt-4o': {'name': 'GPT-4 Optimized', 'base_provider': 'OpenAI', 'best_provider': ''},
-            'gpt-4o-mini': {'name': 'GPT-4 Optimized Mini', 'base_provider': 'OpenAI', 'best_provider': ''},
-            'gpt-4.1': {'name': 'GPT-4.1', 'base_provider': 'OpenAI', 'best_provider': ''},
-            'gpt-4.1-mini': {'name': 'GPT-4.1 Mini', 'base_provider': 'OpenAI', 'best_provider': ''},
-            'gpt-4.1-nano': {'name': 'GPT-4.1 Nano', 'base_provider': 'OpenAI', 'best_provider': ''},
+        models = {}
+        
+        # All unique models from the table
+        model_list = {
+            # Blackbox models
+            'blackboxai': {'name': 'BlackboxAI', 'base_provider': 'Blackbox'},
+            'gpt-4.1-mini': {'name': 'GPT-4.1 Mini', 'base_provider': 'Blackbox'},
+            'gpt-4.1-nano': {'name': 'GPT-4.1 Nano', 'base_provider': 'Blackbox'},
+            'gpt-4': {'name': 'GPT-4', 'base_provider': 'Multiple'},
+            'gpt-4o': {'name': 'GPT-4 Optimized', 'base_provider': 'Multiple'},
+            'gpt-4o-mini': {'name': 'GPT-4 Optimized Mini', 'base_provider': 'Multiple'},
+            'o1': {'name': 'O1', 'base_provider': 'Multiple'},
+            'o4-mini': {'name': 'O4 Mini', 'base_provider': 'Multiple'},
             
-            # Claude Models
-            'claude-v1': {'name': 'Claude v1', 'base_provider': 'Anthropic', 'best_provider': ''},
-            'claude-3-haiku': {'name': 'Claude 3 Haiku', 'base_provider': 'Anthropic', 'best_provider': ''},
-            'claude-3.7-sonnet': {'name': 'Claude 3.7 Sonnet', 'base_provider': 'Anthropic', 'best_provider': ''},
+            # LLaMA models
+            'llama-3.1-70b': {'name': 'LLaMA 3.1 70B', 'base_provider': 'Multiple'},
+            'llama-3.1-8b': {'name': 'LLaMA 3.1 8B', 'base_provider': 'Multiple'},
+            'llama-2-7b': {'name': 'LLaMA 2 7B', 'base_provider': 'Multiple'},
+            'llama-2-70b': {'name': 'LLaMA 2 70B', 'base_provider': 'Multiple'},
+            'llama-3-8b': {'name': 'LLaMA 3 8B', 'base_provider': 'Multiple'},
+            'llama-3-70b': {'name': 'LLaMA 3 70B', 'base_provider': 'Multiple'},
+            'llama-3.2-3b': {'name': 'LLaMA 3.2 3B', 'base_provider': 'Multiple'},
+            'llama-3.2-90b': {'name': 'LLaMA 3.2 90B', 'base_provider': 'Multiple'},
+            'llama-3.3-70b': {'name': 'LLaMA 3.3 70B', 'base_provider': 'Multiple'},
+            'llama-4-scout': {'name': 'LLaMA 4 Scout', 'base_provider': 'Multiple'},
+            'llama-4-maverick': {'name': 'LLaMA 4 Maverick', 'base_provider': 'Multiple'},
             
-            # LLaMA Models
-            'llama-2-7b': {'name': 'LLaMA 2 7B', 'base_provider': 'Meta', 'best_provider': ''},
-            'llama-3-8b': {'name': 'LLaMA 3 8B', 'base_provider': 'Meta', 'best_provider': ''},
-            'llama-3.1-8b': {'name': 'LLaMA 3.1 8B', 'base_provider': 'Meta', 'best_provider': ''},
-            'llama-3.1-70b': {'name': 'LLaMA 3.1 70B', 'base_provider': 'Meta', 'best_provider': ''},
-            'llama-3.2-1b': {'name': 'LLaMA 3.2 1B', 'base_provider': 'Meta', 'best_provider': ''},
-            'llama-3.2-90b': {'name': 'LLaMA 3.2 90B', 'base_provider': 'Meta', 'best_provider': ''},
-            'llama-3.3-70b': {'name': 'LLaMA 3.3 70B', 'base_provider': 'Meta', 'best_provider': ''},
+            # Qwen models
+            'qwen-1.5-7b': {'name': 'Qwen 1.5 7B', 'base_provider': 'Alibaba'},
+            'qwen-1.5-11b': {'name': 'Qwen 1.5 11B', 'base_provider': 'Alibaba'},
+            'qwen-2-5-plus': {'name': 'Qwen 2.5 Plus', 'base_provider': 'Alibaba'},
+            'qwen-2.5-72b': {'name': 'Qwen 2.5 72B', 'base_provider': 'Alibaba'},
+            'qwen-2.5-coder-32b': {'name': 'Qwen 2.5 Coder 32B', 'base_provider': 'Alibaba'},
+            'qwen-3-14b': {'name': 'Qwen 3 14B', 'base_provider': 'Alibaba'},
+            'qwen-3-235b': {'name': 'Qwen 3 235B', 'base_provider': 'Alibaba'},
+            'qwen-3-30b': {'name': 'Qwen 3 30B', 'base_provider': 'Alibaba'},
+            'qwen-3-32b': {'name': 'Qwen 3 32B', 'base_provider': 'Alibaba'},
+            'qwen-3-4b': {'name': 'Qwen 3 4B', 'base_provider': 'Alibaba'},
+            'qwen-32b': {'name': 'Qwen 32B', 'base_provider': 'Alibaba'},
+            'qwen-plus': {'name': 'Qwen Plus', 'base_provider': 'Alibaba'},
+            'qwen-vl-max': {'name': 'Qwen VL Max', 'base_provider': 'Alibaba'},
+            'qwq-32b': {'name': 'QwQ 32B', 'base_provider': 'Alibaba'},
             
-            # DeepSeek Models
-            'deepseek-chat': {'name': 'DeepSeek Chat', 'base_provider': 'DeepSeek', 'best_provider': ''},
-            'deepseek-v3': {'name': 'DeepSeek V3', 'base_provider': 'DeepSeek', 'best_provider': ''},
-            'deepseek-r1': {'name': 'DeepSeek R1', 'base_provider': 'DeepSeek', 'best_provider': ''},
+            # DeepSeek models
+            'deepseek-prover-v2-671b': {'name': 'DeepSeek Prover V2 671B', 'base_provider': 'DeepSeek'},
+            'deepseek-r1': {'name': 'DeepSeek R1', 'base_provider': 'DeepSeek'},
+            'deepseek-r1-4528': {'name': 'DeepSeek R1 4528', 'base_provider': 'DeepSeek'},
+            'deepseek-r1-distill-llama-70b': {'name': 'DeepSeek R1 Distill LLaMA 70B', 'base_provider': 'DeepSeek'},
+            'deepseek-r1-distill-qwen-14b': {'name': 'DeepSeek R1 Distill Qwen 14B', 'base_provider': 'DeepSeek'},
+            'deepseek-r1-distill-qwen-32b': {'name': 'DeepSeek R1 Distill Qwen 32B', 'base_provider': 'DeepSeek'},
+            'deepseek-r1-distill-qwen-1.5b': {'name': 'DeepSeek R1 Distill Qwen 1.5B', 'base_provider': 'DeepSeek'},
+            'deepseek-r1-turbo': {'name': 'DeepSeek R1 Turbo', 'base_provider': 'DeepSeek'},
+            'deepseek-v2': {'name': 'DeepSeek V2', 'base_provider': 'DeepSeek'},
+            'deepseek-v2.5': {'name': 'DeepSeek V2.5', 'base_provider': 'DeepSeek'},
+            'deepseek-v3': {'name': 'DeepSeek V3', 'base_provider': 'DeepSeek'},
+            'deepseek-v3-0324': {'name': 'DeepSeek V3 0324', 'base_provider': 'DeepSeek'},
+            'deepseek-coder-v2': {'name': 'DeepSeek Coder V2', 'base_provider': 'DeepSeek'},
             
-            # Qwen Models
-            'qwen-1.5-7b': {'name': 'Qwen 1.5 7B', 'base_provider': 'Alibaba', 'best_provider': ''},
-            'qwen-2-72b': {'name': 'Qwen 2 72B', 'base_provider': 'Alibaba', 'best_provider': ''},
-            'qwen-2.5-72b': {'name': 'Qwen 2.5 72B', 'base_provider': 'Alibaba', 'best_provider': ''},
-            'qwq-32b': {'name': 'QwQ 32B', 'base_provider': 'Alibaba', 'best_provider': ''},
+            # Gemini models
+            'gemini-1.5-pro': {'name': 'Gemini 1.5 Pro', 'base_provider': 'Google'},
+            'gemini-1.5-flash': {'name': 'Gemini 1.5 Flash', 'base_provider': 'Google'},
+            'gemini-2.0-flash': {'name': 'Gemini 2.0 Flash', 'base_provider': 'Google'},
+            'gemini-1.5-flash-thinking': {'name': 'Gemini 1.5 Flash Thinking', 'base_provider': 'Google'},
+            'gemini-2.0-flash-thinking': {'name': 'Gemini 2.0 Flash Thinking', 'base_provider': 'Google'},
+            'gemini-2.5-flash': {'name': 'Gemini 2.5 Flash', 'base_provider': 'Google'},
+            'gemini-2.5-pro': {'name': 'Gemini 2.5 Pro', 'base_provider': 'Google'},
             
-            # Mixtral Models
-            'mixtral-8x22b': {'name': 'Mixtral 8x22B', 'base_provider': 'Mistral', 'best_provider': ''},
-            'mixtral-small-24b': {'name': 'Mixtral Small 24B', 'base_provider': 'Mistral', 'best_provider': ''},
+            # Claude models
+            'claude-3.7-sonnet': {'name': 'Claude 3.7 Sonnet', 'base_provider': 'Anthropic'},
+            'claude-3-sonnet': {'name': 'Claude 3 Sonnet', 'base_provider': 'Anthropic'},
+            'claude-3-opus': {'name': 'Claude 3 Opus', 'base_provider': 'Anthropic'},
+            'claude-3-haiku': {'name': 'Claude 3 Haiku', 'base_provider': 'Anthropic'},
+            'claude-3.5-haiku': {'name': 'Claude 3.5 Haiku', 'base_provider': 'Anthropic'},
             
-            # Other Models
-            'blackboxai': {'name': 'BlackboxAI', 'base_provider': 'Blackbox', 'best_provider': ''},
-            'blackboxai-pro': {'name': 'BlackboxAI Pro', 'base_provider': 'Blackbox', 'best_provider': ''},
-            'glm-4': {'name': 'GLM-4', 'base_provider': 'Zhipu', 'best_provider': ''},
-            'o1': {'name': 'O1', 'base_provider': 'OpenAI', 'best_provider': ''},
-            'o3-mini': {'name': 'O3 Mini', 'base_provider': 'OpenAI', 'best_provider': ''},
-            'palm': {'name': 'PaLM', 'base_provider': 'Google', 'best_provider': ''},
-            'gemini': {'name': 'Gemini', 'base_provider': 'Google', 'best_provider': ''},
-            'gemini-pro': {'name': 'Gemini Pro', 'base_provider': 'Google', 'best_provider': ''},
-            
-            # Open Source Models
-            'dolphin-2.6': {'name': 'Dolphin 2.6', 'base_provider': 'Cognitive', 'best_provider': ''},
-            'dolphin-2.9': {'name': 'Dolphin 2.9', 'base_provider': 'Cognitive', 'best_provider': ''},
-            'yi-34b': {'name': 'Yi 34B', 'base_provider': '01.ai', 'best_provider': ''},
-            'command-r': {'name': 'Command R', 'base_provider': 'Cohere', 'best_provider': ''},
-            'command-r-plus': {'name': 'Command R Plus', 'base_provider': 'Cohere', 'best_provider': ''},
-            
-            # Vision Models
-            'qwen-2-vl-7b': {'name': 'Qwen 2 VL 7B', 'base_provider': 'Alibaba', 'best_provider': ''},
-            'janus-pro-7b': {'name': 'Janus Pro 7B', 'base_provider': 'DeepSeek', 'best_provider': ''},
-            
-            # Special Models
-            'tulu-3-405b': {'name': 'Tulu 3 405B', 'base_provider': 'AllenAI', 'best_provider': ''},
-            'tulu-3-70b': {'name': 'Tulu 3 70B', 'base_provider': 'AllenAI', 'best_provider': ''},
-            'wizardlm-2-8x22b': {'name': 'WizardLM 2 8x22B', 'base_provider': 'Microsoft', 'best_provider': ''}
+            # Other models
+            'grok-3': {'name': 'Grok 3', 'base_provider': 'xAI'},
+            'grok-2': {'name': 'Grok 2', 'base_provider': 'xAI'},
+            'grok-2-mini': {'name': 'Grok 2 Mini', 'base_provider': 'xAI'},
+            'grok-3-mini': {'name': 'Grok 3 Mini', 'base_provider': 'xAI'},
+            'glm-4': {'name': 'GLM-4', 'base_provider': 'Zhipu'},
+            'glm-4-plus': {'name': 'GLM-4 Plus', 'base_provider': 'Zhipu'},
+            'o3-mini': {'name': 'O3 Mini', 'base_provider': 'OpenAI'},
+            'o3': {'name': 'O3', 'base_provider': 'OpenAI'},
+            'sonar': {'name': 'Sonar', 'base_provider': 'Perplexity'},
+            'sonar-pro': {'name': 'Sonar Pro', 'base_provider': 'Perplexity'},
+            'sonar-reasoning': {'name': 'Sonar Reasoning', 'base_provider': 'Perplexity'},
+            'sonar-reasoning-pro': {'name': 'Sonar Reasoning Pro', 'base_provider': 'Perplexity'},
+            'mixtral-7b': {'name': 'Mixtral 7B', 'base_provider': 'Mistral'},
+            'mixtral-8x7b': {'name': 'Mixtral 8x7B', 'base_provider': 'Mistral'},
+            'mixtral-8x22b': {'name': 'Mixtral 8x22B', 'base_provider': 'Mistral'},
+            'mixtral-small-24b': {'name': 'Mixtral Small 24B', 'base_provider': 'Mistral'},
+            'mistral-7b': {'name': 'Mistral 7B', 'base_provider': 'Mistral'},
+            'mistral-small-3.1-24b': {'name': 'Mistral Small 3.1 24B', 'base_provider': 'Mistral'},
+            'mistral-next': {'name': 'Mistral Next', 'base_provider': 'Mistral'},
+            'pixtral-large': {'name': 'Pixtral Large', 'base_provider': 'Mistral'},
+            'phi-4': {'name': 'Phi 4', 'base_provider': 'Microsoft'},
+            'phi-4-maverick': {'name': 'Phi 4 Maverick', 'base_provider': 'Microsoft'},
+            'phi-3-small': {'name': 'Phi 3 Small', 'base_provider': 'Microsoft'},
+            'phi-3-medium': {'name': 'Phi 3 Medium', 'base_provider': 'Microsoft'},
+            'phi-3-mini': {'name': 'Phi 3 Mini', 'base_provider': 'Microsoft'},
+            'hermes-2-dpo': {'name': 'Hermes 2 DPO', 'base_provider': 'NousResearch'},
+            'hermes-3': {'name': 'Hermes 3', 'base_provider': 'NousResearch'},
+            'hermes-3-405b': {'name': 'Hermes 3 405B', 'base_provider': 'NousResearch'},
+            'nemotron-70b': {'name': 'Nemotron 70B', 'base_provider': 'NVIDIA'},
+            'nemotron-253b': {'name': 'Nemotron 253B', 'base_provider': 'NVIDIA'},
+            'nemotron-40b': {'name': 'Nemotron 40B', 'base_provider': 'NVIDIA'},
+            'nemotron-51b': {'name': 'Nemotron 51B', 'base_provider': 'NVIDIA'},
+            'nemotron-4-340b': {'name': 'Nemotron 4 340B', 'base_provider': 'NVIDIA'},
+            'codellama-70b': {'name': 'CodeLLaMA 70B', 'base_provider': 'Meta'},
+            'command-r': {'name': 'Command R', 'base_provider': 'Cohere'},
+            'command-r-plus': {'name': 'Command R Plus', 'base_provider': 'Cohere'},
+            'command-r7b': {'name': 'Command R7B', 'base_provider': 'Cohere'},
+            'command-a': {'name': 'Command A', 'base_provider': 'Cohere'},
+            'dbrx-instruct': {'name': 'DBRX Instruct', 'base_provider': 'Databricks'},
+            'openhermes-2.5-7b': {'name': 'OpenHermes 2.5 7B', 'base_provider': 'NousResearch'},
+            'wizardlm-2-7b': {'name': 'WizardLM 2 7B', 'base_provider': 'Microsoft'},
+            'wizardlm-2-8x22b': {'name': 'WizardLM 2 8x22B', 'base_provider': 'Microsoft'},
+            'dolphin-2.6': {'name': 'Dolphin 2.6', 'base_provider': 'Cognitive'},
+            'dolphin-2.9': {'name': 'Dolphin 2.9', 'base_provider': 'Cognitive'},
+            'airoboros-70b': {'name': 'Airoboros 70B', 'base_provider': 'Community'},
+            'lzlv-70b': {'name': 'LZLV 70B', 'base_provider': 'Community'},
+            'r1-1776': {'name': 'R1 1776', 'base_provider': 'Community'},
+            'pplx-70b-online': {'name': 'PPLX 70B Online', 'base_provider': 'Perplexity'},
+            'pplx-7b-online': {'name': 'PPLX 7B Online', 'base_provider': 'Perplexity'},
+            'reka-flash': {'name': 'Reka Flash', 'base_provider': 'Reka'},
+            'reka-core': {'name': 'Reka Core', 'base_provider': 'Reka'},
+            'gemma-1-4b': {'name': 'Gemma 1 4B', 'base_provider': 'Google'},
+            'gemma-2-12b': {'name': 'Gemma 2 12B', 'base_provider': 'Google'},
+            'gemma-2-27b': {'name': 'Gemma 2 27B', 'base_provider': 'Google'},
+            'gemma-2-2b': {'name': 'Gemma 2 2B', 'base_provider': 'Google'},
+            'gemma-2-9b': {'name': 'Gemma 2 9B', 'base_provider': 'Google'},
+            'gemma-3-12b': {'name': 'Gemma 3 12B', 'base_provider': 'Google'},
+            'gemma-3-27b': {'name': 'Gemma 3 27B', 'base_provider': 'Google'},
+            'tulu-3-8b': {'name': 'Tulu 3 8B', 'base_provider': 'AllenAI'},
+            'tulu-2-70b': {'name': 'Tulu 2 70B', 'base_provider': 'AllenAI'},
+            'yi-34b': {'name': 'Yi 34B', 'base_provider': '01.ai'},
+            'llama-13b': {'name': 'LLaMA 13B', 'base_provider': 'Meta'}
         }
+        
+        for model_id, model_info in model_list.items():
+            models[model_id] = {
+                'name': model_info['name'],
+                'base_provider': model_info['base_provider'],
+                'best_provider': ''
+            }
+        
         return models
     
-    def _test_providers(self) -> List[str]:
-        """Test providers to see which ones are working"""
-        working = []
-        test_messages = [{"role": "user", "content": "Hi"}]
-        
-        for provider_name in self.providers.keys():
-            try:
-                provider = getattr(g4f.Provider, provider_name)
-                # Quick test
-                response = g4f.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=test_messages,
-                    provider=provider,
-                    stream=False,
-                    timeout=10
-                )
-                if response and len(str(response).strip()) > 0:
-                    working.append(provider_name)
-                    logger.info(f"Provider {provider_name} is working")
-                else:
-                    logger.warning(f"Provider {provider_name} returned empty response")
-            except Exception as e:
-                logger.warning(f"Provider {provider_name} test failed: {e}")
-                continue
-        
-        logger.info(f"Working providers: {working}")
-        return working
+    def _get_image_models(self) -> Dict[str, Any]:
+        """Get available image generation models"""
+        image_models = {
+            # ImageLabs models
+            'sdxl-turbo': {'name': 'SDXL Turbo', 'providers': ['ImageLabs']},
+            
+            # PollinationsImage models
+            'flux': {'name': 'Flux', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together']},
+            'flux-pro': {'name': 'Flux Pro', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together']},
+            'flux-dev': {'name': 'Flux Dev', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together', 'HuggingSpace']},
+            'flux-schnell': {'name': 'Flux Schnell', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together']},
+            'dall-e-3': {'name': 'DALL-E 3', 'providers': ['PollinationsImage', 'PollinationsAI', 'Copilot']},
+            'sdxl-turbo': {'name': 'SDXL Turbo', 'providers': ['PollinationsImage', 'PollinationsAI']},
+            'gpt-image': {'name': 'GPT Image', 'providers': ['PollinationsImage', 'PollinationsAI', 'ARTA']},
+            
+            # ARTA models
+            'sdxl-1.0': {'name': 'Stable Diffusion XL 1.0', 'providers': ['ARTA']},
+            'sdxl-l': {'name': 'Stable Diffusion XL Large', 'providers': ['ARTA']},
+            
+            # HuggingSpace models
+            'sd-3.5-large': {'name': 'Stable Diffusion 3.5 Large', 'providers': ['HuggingSpace']},
+            
+            # Together models
+            'flux-redux': {'name': 'Flux Redux', 'providers': ['Together']},
+            'flux-depth': {'name': 'Flux Depth', 'providers': ['Together']},
+            'flux-canny': {'name': 'Flux Canny', 'providers': ['Together']},
+            'flux-kontext-max': {'name': 'Flux Kontext Max', 'providers': ['Together']},
+            'flux-dev-lora': {'name': 'Flux Dev LoRA', 'providers': ['Together']},
+            'flux-kontext-pro': {'name': 'Flux Kontext Pro', 'providers': ['Together']}
+        }
+        return image_models
     
     def _test_image_providers(self) -> List[str]:
         """Test image providers to see which ones are working"""
