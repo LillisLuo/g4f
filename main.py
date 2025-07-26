@@ -479,77 +479,73 @@ class GPT4FreeService:
                 # Try different methods based on g4f version
                 response = None
                 
-                # Method 1: Using ImageGeneration class
-                if hasattr(g4f, 'ImageGeneration'):
-                    try:
-                        response = g4f.ImageGeneration.create(
-                            prompt=prompt,
-                            provider=provider,
-                            model=model,
-                            size=size,
-                            quality=quality,
-                            n=n,
-                            timeout=60
-                        )
-                    except Exception as e:
-                        logger.warning(f"Method 1 failed for {provider_name}: {e}")
+                # Method 1: Direct image generation (for newer g4f versions)
+                try:
+                    # Import the client if available
+                    from g4f.client import Client
+                    client = Client()
+                    
+                    # Use the appropriate model for the provider
+                    image_model = model or 'flux'
+                    if provider_name == 'Together' and not model:
+                        image_model = 'flux'
+                    elif provider_name == 'PollinationsImage' and not model:
+                        image_model = 'flux'
+                    elif provider_name == 'ARTA' and not model:
+                        image_model = 'sdxl-1.0'
+                    
+                    response = client.images.generate(
+                        model=image_model,
+                        prompt=prompt,
+                        provider=provider
+                    )
+                    
+                    if response and hasattr(response, 'data') and response.data:
+                        image_url = response.data[0].url
+                        logger.info(f"Success with provider {provider_name}: got URL via client")
+                        return {'url': image_url, 'provider': provider_name}
+                        
+                except Exception as e:
+                    logger.warning(f"Client method failed for {provider_name}: {e}")
                 
-                # Method 2: Using provider's create_image method
-                if not response and hasattr(provider, 'create_image'):
-                    try:
-                        response = provider.create_image(
-                            prompt=prompt,
-                            size=size,
-                            timeout=60
-                        )
-                    except Exception as e:
-                        logger.warning(f"Method 2 failed for {provider_name}: {e}")
-                
-                # Method 3: Using ChatCompletion with image request
+                # Method 2: Using provider's create method directly
                 if not response:
                     try:
-                        image_request = f"Generate an image: {prompt}"
-                        response = g4f.ChatCompletion.create(
-                            model="dall-e" if "dall" in provider_name.lower() else "default",
-                            messages=[{"role": "user", "content": image_request}],
-                            provider=provider,
-                            image=True,
-                            timeout=60
-                        )
+                        # Some providers might have a direct create method
+                        if hasattr(provider, 'create'):
+                            response = provider.create(
+                                prompt=prompt,
+                                model=model
+                            )
+                            if response:
+                                logger.info(f"Success with provider {provider_name}: direct create method")
+                                if isinstance(response, str) and response.startswith('http'):
+                                    return {'url': response, 'provider': provider_name}
+                                elif isinstance(response, dict) and 'url' in response:
+                                    return {'url': response['url'], 'provider': provider_name}
                     except Exception as e:
-                        logger.warning(f"Method 3 failed for {provider_name}: {e}")
+                        logger.warning(f"Direct create method failed for {provider_name}: {e}")
                 
-                # Process response
-                if response:
-                    # Handle different response types
-                    if isinstance(response, str):
-                        # Check if it's a URL
-                        if response.startswith(('http://', 'https://')):
-                            logger.info(f"Success with provider {provider_name}: got URL")
-                            return {'url': response, 'provider': provider_name}
-                        # Check if it's base64
-                        elif response.startswith('data:image'):
-                            logger.info(f"Success with provider {provider_name}: got base64")
-                            return {'base64': response, 'provider': provider_name}
-                        # Try to parse as JSON
-                        else:
-                            try:
-                                data = json.loads(response)
-                                if 'url' in data or 'data' in data or 'images' in data:
-                                    logger.info(f"Success with provider {provider_name}: got JSON")
-                                    return {'data': data, 'provider': provider_name}
-                            except:
-                                pass
-                    elif isinstance(response, dict):
-                        logger.info(f"Success with provider {provider_name}: got dict")
-                        return {'data': response, 'provider': provider_name}
-                    elif isinstance(response, list) and len(response) > 0:
-                        logger.info(f"Success with provider {provider_name}: got list")
-                        return {'data': response[0], 'provider': provider_name}
+                # Method 3: Try using ChatCompletion with specific parameters
+                if not response:
+                    try:
+                        # Some providers might support image generation through chat
+                        response = g4f.ChatCompletion.create(
+                            model=model or "flux",
+                            messages=[{"role": "user", "content": prompt}],
+                            provider=provider,
+                            image=True
+                        )
+                        if response:
+                            logger.info(f"Success with provider {provider_name}: chat method")
+                            if isinstance(response, str) and response.startswith('http'):
+                                return {'url': response, 'provider': provider_name}
+                    except Exception as e:
+                        logger.warning(f"Chat method failed for {provider_name}: {e}")
                     
             except Exception as e:
                 last_error = e
-                logger.warning(f"Image provider {provider_name} failed: {e}")
+                logger.error(f"Image provider {provider_name} failed completely: {e}")
                 continue
         
         # If everything failed
