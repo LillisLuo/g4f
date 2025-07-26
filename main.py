@@ -1,0 +1,714 @@
+from flask import Flask, render_template, request, jsonify, Response, send_file
+import g4f
+import json
+import logging
+from typing import Dict, List, Any
+import os
+import threading
+import time
+import base64
+from io import BytesIO
+from PIL import Image
+import requests
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class GPT4FreeService:
+    def _get_image_models(self) -> Dict[str, Any]:
+        """Get available image generation models"""
+        image_models = {
+            # Flux Models
+            'flux': {'name': 'Flux', 'providers': ['ARTA', 'Blackbox', 'PollinationsImage']},
+            'flux-dev': {'name': 'Flux Dev', 'providers': ['ARTA', 'PollinationsImage', 'HuggingSpace']},
+            'flux-pro': {'name': 'Flux Pro', 'providers': ['ARTA']},
+            'flux-schnell': {'name': 'Flux Schnell', 'providers': ['PollinationsImage', 'HuggingSpace']},
+            
+            # Stable Diffusion Models
+            'sdxl-1.0': {'name': 'Stable Diffusion XL 1.0', 'providers': ['ARTA']},
+            'sd-3.5': {'name': 'Stable Diffusion 3.5', 'providers': ['HuggingSpace', 'HuggingFace']},
+            
+            # DALL-E Models
+            'dalle': {'name': 'DALL-E', 'providers': ['Bing', 'DallE']},
+            'dalle-3': {'name': 'DALL-E 3', 'providers': ['Bing', 'OpenaiChat']},
+            'dalle-mini': {'name': 'DALL-E Mini', 'providers': ['DallEMini', 'Craiyon']},
+            
+            # Other Models
+            'midjourney': {'name': 'Midjourney', 'providers': ['DeepAI']},
+            'gpt-image': {'name': 'GPT Image', 'providers': ['ARTA']},
+            'sdxl-l': {'name': 'Stable Diffusion XL Large', 'providers': ['ARTA']},
+            
+            # Default/Generic
+            'default': {'name': 'Default Model', 'providers': ['*']}
+        }
+        return image_models
+    
+    def __init__(self):
+        self.providers = self._get_available_providers()
+        self.models = self._get_available_models()
+        self.image_providers = self._get_image_providers()
+        self.image_models = self._get_image_models()
+        self.working_providers = self._test_providers()
+        self.working_image_providers = self._test_image_providers()
+    
+    def _get_available_providers(self) -> Dict[str, Any]:
+        """Get available providers from g4f"""
+        providers = {}
+        try:
+            # Comprehensive list of providers that don't require auth
+            provider_list = [
+                # Most reliable providers
+                'Blackbox', 'DDG', 'ChatGpt', 'ChatGptEs', 'DeepInfraChat',
+                'Copilot', 'You', 'Aichat', 'ChatBase', 'FreeGpt', 
+                'GPTalk', 'Liaobots', 'Phind', 'Yqcloud', 'Bing',
+                
+                # Additional no-auth providers
+                'ChatGLM', 'Cloudflare', 'Dynaspark', 'DocsBot',
+                'Free2GPT', 'LambdaChat', 'PollinationsAI', 'PuterJS',
+                'WeWordle', 'Chatai', 'OpenaiChat', 
+                
+                # More providers
+                'OIVSCodeSer2', 'OIVSCodeSer5', 'OIVSCodeSer0501',
+                'AllenAI', 'ARTA', 'Blackboxapi',
+                
+                # Vision capable providers
+                'GeminiPro', 'HuggingChat', 'HuggingFace'
+            ]
+            
+            for provider_name in provider_list:
+                try:
+                    if hasattr(g4f.Provider, provider_name):
+                        provider = getattr(g4f.Provider, provider_name)
+                        providers[provider_name] = {
+                            'name': provider_name,
+                            'working': True,
+                            'supports_stream': True,
+                            'supports_system_message': True,
+                            'url': getattr(provider, 'url', '')
+                        }
+                except Exception as e:
+                    logger.warning(f"Provider {provider_name} not available: {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Error getting providers: {e}")
+        return providers
+    
+    def _get_image_providers(self) -> Dict[str, Any]:
+        """Get available image generation providers"""
+        image_providers = {}
+        try:
+            # Comprehensive list of image providers (no auth required)
+            image_provider_list = [
+                # Primary image providers
+                'ARTA', 'Blackbox', 'PollinationsImage', 
+                'HuggingSpace', 'HuggingFace',
+                
+                # Legacy but might work
+                'Bing', 'BingCreateImages', 'DeepAI', 
+                'Craiyon', 'DallE', 'DallEMini', 
+                'Prodia', 'PixArt',
+                
+                # Additional providers
+                'DeepInfraImage', 'PollinationsAI'
+            ]
+            
+            for provider_name in image_provider_list:
+                try:
+                    if hasattr(g4f.Provider, provider_name):
+                        provider = getattr(g4f.Provider, provider_name)
+                        # Check if provider supports image generation
+                        if hasattr(provider, 'supports_image_generation') or provider_name in ['Bing', 'BingCreateImages', 'DeepAI']:
+                            image_providers[provider_name] = {
+                                'name': provider_name,
+                                'working': True,
+                                'supports_models': getattr(provider, 'image_models', ['default']),
+                                'url': getattr(provider, 'url', '')
+                            }
+                except Exception as e:
+                    logger.warning(f"Image provider {provider_name} not available: {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"Error getting image providers: {e}")
+        return image_providers
+    
+    def _get_available_models(self) -> Dict[str, Any]:
+        """Get available models from g4f"""
+        models = {
+            # GPT Models
+            'gpt-3.5-turbo': {'name': 'GPT-3.5 Turbo', 'base_provider': 'OpenAI', 'best_provider': ''},
+            'gpt-4': {'name': 'GPT-4', 'base_provider': 'OpenAI', 'best_provider': ''},
+            'gpt-4o': {'name': 'GPT-4 Optimized', 'base_provider': 'OpenAI', 'best_provider': ''},
+            'gpt-4o-mini': {'name': 'GPT-4 Optimized Mini', 'base_provider': 'OpenAI', 'best_provider': ''},
+            'gpt-4.1': {'name': 'GPT-4.1', 'base_provider': 'OpenAI', 'best_provider': ''},
+            'gpt-4.1-mini': {'name': 'GPT-4.1 Mini', 'base_provider': 'OpenAI', 'best_provider': ''},
+            'gpt-4.1-nano': {'name': 'GPT-4.1 Nano', 'base_provider': 'OpenAI', 'best_provider': ''},
+            
+            # Claude Models
+            'claude-v1': {'name': 'Claude v1', 'base_provider': 'Anthropic', 'best_provider': ''},
+            'claude-3-haiku': {'name': 'Claude 3 Haiku', 'base_provider': 'Anthropic', 'best_provider': ''},
+            'claude-3.7-sonnet': {'name': 'Claude 3.7 Sonnet', 'base_provider': 'Anthropic', 'best_provider': ''},
+            
+            # LLaMA Models
+            'llama-2-7b': {'name': 'LLaMA 2 7B', 'base_provider': 'Meta', 'best_provider': ''},
+            'llama-3-8b': {'name': 'LLaMA 3 8B', 'base_provider': 'Meta', 'best_provider': ''},
+            'llama-3.1-8b': {'name': 'LLaMA 3.1 8B', 'base_provider': 'Meta', 'best_provider': ''},
+            'llama-3.1-70b': {'name': 'LLaMA 3.1 70B', 'base_provider': 'Meta', 'best_provider': ''},
+            'llama-3.2-1b': {'name': 'LLaMA 3.2 1B', 'base_provider': 'Meta', 'best_provider': ''},
+            'llama-3.2-90b': {'name': 'LLaMA 3.2 90B', 'base_provider': 'Meta', 'best_provider': ''},
+            'llama-3.3-70b': {'name': 'LLaMA 3.3 70B', 'base_provider': 'Meta', 'best_provider': ''},
+            
+            # DeepSeek Models
+            'deepseek-chat': {'name': 'DeepSeek Chat', 'base_provider': 'DeepSeek', 'best_provider': ''},
+            'deepseek-v3': {'name': 'DeepSeek V3', 'base_provider': 'DeepSeek', 'best_provider': ''},
+            'deepseek-r1': {'name': 'DeepSeek R1', 'base_provider': 'DeepSeek', 'best_provider': ''},
+            
+            # Qwen Models
+            'qwen-1.5-7b': {'name': 'Qwen 1.5 7B', 'base_provider': 'Alibaba', 'best_provider': ''},
+            'qwen-2-72b': {'name': 'Qwen 2 72B', 'base_provider': 'Alibaba', 'best_provider': ''},
+            'qwen-2.5-72b': {'name': 'Qwen 2.5 72B', 'base_provider': 'Alibaba', 'best_provider': ''},
+            'qwq-32b': {'name': 'QwQ 32B', 'base_provider': 'Alibaba', 'best_provider': ''},
+            
+            # Mixtral Models
+            'mixtral-8x22b': {'name': 'Mixtral 8x22B', 'base_provider': 'Mistral', 'best_provider': ''},
+            'mixtral-small-24b': {'name': 'Mixtral Small 24B', 'base_provider': 'Mistral', 'best_provider': ''},
+            
+            # Other Models
+            'blackboxai': {'name': 'BlackboxAI', 'base_provider': 'Blackbox', 'best_provider': ''},
+            'blackboxai-pro': {'name': 'BlackboxAI Pro', 'base_provider': 'Blackbox', 'best_provider': ''},
+            'glm-4': {'name': 'GLM-4', 'base_provider': 'Zhipu', 'best_provider': ''},
+            'o1': {'name': 'O1', 'base_provider': 'OpenAI', 'best_provider': ''},
+            'o3-mini': {'name': 'O3 Mini', 'base_provider': 'OpenAI', 'best_provider': ''},
+            'palm': {'name': 'PaLM', 'base_provider': 'Google', 'best_provider': ''},
+            'gemini': {'name': 'Gemini', 'base_provider': 'Google', 'best_provider': ''},
+            'gemini-pro': {'name': 'Gemini Pro', 'base_provider': 'Google', 'best_provider': ''},
+            
+            # Open Source Models
+            'dolphin-2.6': {'name': 'Dolphin 2.6', 'base_provider': 'Cognitive', 'best_provider': ''},
+            'dolphin-2.9': {'name': 'Dolphin 2.9', 'base_provider': 'Cognitive', 'best_provider': ''},
+            'yi-34b': {'name': 'Yi 34B', 'base_provider': '01.ai', 'best_provider': ''},
+            'command-r': {'name': 'Command R', 'base_provider': 'Cohere', 'best_provider': ''},
+            'command-r-plus': {'name': 'Command R Plus', 'base_provider': 'Cohere', 'best_provider': ''},
+            
+            # Vision Models
+            'qwen-2-vl-7b': {'name': 'Qwen 2 VL 7B', 'base_provider': 'Alibaba', 'best_provider': ''},
+            'janus-pro-7b': {'name': 'Janus Pro 7B', 'base_provider': 'DeepSeek', 'best_provider': ''},
+            
+            # Special Models
+            'tulu-3-405b': {'name': 'Tulu 3 405B', 'base_provider': 'AllenAI', 'best_provider': ''},
+            'tulu-3-70b': {'name': 'Tulu 3 70B', 'base_provider': 'AllenAI', 'best_provider': ''},
+            'wizardlm-2-8x22b': {'name': 'WizardLM 2 8x22B', 'base_provider': 'Microsoft', 'best_provider': ''}
+        }
+        return models
+    
+    def _test_providers(self) -> List[str]:
+        """Test providers to see which ones are working"""
+        working = []
+        test_messages = [{"role": "user", "content": "Hi"}]
+        
+        for provider_name in self.providers.keys():
+            try:
+                provider = getattr(g4f.Provider, provider_name)
+                # Quick test
+                response = g4f.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=test_messages,
+                    provider=provider,
+                    stream=False,
+                    timeout=10
+                )
+                if response and len(str(response).strip()) > 0:
+                    working.append(provider_name)
+                    logger.info(f"Provider {provider_name} is working")
+                else:
+                    logger.warning(f"Provider {provider_name} returned empty response")
+            except Exception as e:
+                logger.warning(f"Provider {provider_name} test failed: {e}")
+                continue
+        
+        logger.info(f"Working providers: {working}")
+        return working
+    
+    def _test_image_providers(self) -> List[str]:
+        """Test image providers to see which ones are working"""
+        working = []
+        test_prompt = "A simple red circle"
+        
+        for provider_name in self.image_providers.keys():
+            try:
+                provider = getattr(g4f.Provider, provider_name)
+                # Quick test with a simple prompt
+                logger.info(f"Testing image provider: {provider_name}")
+                
+                # Different methods for different providers
+                if hasattr(g4f, 'ImageGeneration'):
+                    response = g4f.ImageGeneration.create(
+                        prompt=test_prompt,
+                        provider=provider,
+                        timeout=15
+                    )
+                else:
+                    # Fallback method
+                    continue
+                
+                if response:
+                    working.append(provider_name)
+                    logger.info(f"Image provider {provider_name} is working")
+                    
+            except Exception as e:
+                logger.warning(f"Image provider {provider_name} test failed: {e}")
+                continue
+        
+        logger.info(f"Working image providers: {working}")
+        return working
+    
+    def generate_response(self, messages: List[Dict], provider_name: str = None, model_name: str = None, stream: bool = False):
+        """Generate response using g4f with fallback mechanism"""
+        
+        # Clean and validate messages
+        clean_messages = []
+        for msg in messages:
+            if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
+                clean_messages.append({
+                    'role': str(msg['role']).lower(),
+                    'content': str(msg['content']).strip()
+                })
+        
+        if not clean_messages:
+            raise ValueError("No valid messages provided")
+        
+        # Get model
+        model = model_name if model_name else 'gpt-3.5-turbo'
+        
+        # Try specified provider first, then fallback to working providers
+        providers_to_try = []
+        if provider_name and provider_name in self.providers:
+            providers_to_try.append(provider_name)
+        
+        # Add working providers as fallback
+        providers_to_try.extend([p for p in self.working_providers if p not in providers_to_try])
+        
+        # If no working providers, try all available providers
+        if not providers_to_try:
+            providers_to_try = list(self.providers.keys())
+        
+        # Try providers one by one
+        last_error = None
+        for provider_name in providers_to_try:
+            try:
+                logger.info(f"Trying provider: {provider_name}")
+                provider = getattr(g4f.Provider, provider_name)
+                
+                if stream:
+                    response = g4f.ChatCompletion.create(
+                        model=model,
+                        messages=clean_messages,
+                        provider=provider,
+                        stream=True,
+                        timeout=30
+                    )
+                else:
+                    response = g4f.ChatCompletion.create(
+                        model=model,
+                        messages=clean_messages,
+                        provider=provider,
+                        stream=False,
+                        timeout=30
+                    )
+                
+                # Validate response
+                if response:
+                    if stream:
+                        return response  # Return generator for streaming
+                    else:
+                        response_str = str(response).strip()
+                        if response_str and len(response_str) > 0:
+                            logger.info(f"Success with provider: {provider_name}")
+                            return response_str
+                        else:
+                            logger.warning(f"Empty response from provider: {provider_name}")
+                            continue
+                else:
+                    logger.warning(f"No response from provider: {provider_name}")
+                    continue
+                    
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Provider {provider_name} failed: {e}")
+                continue
+        
+        # If all providers failed, try without specifying provider
+        try:
+            logger.info("Trying without specific provider")
+            if stream:
+                response = g4f.ChatCompletion.create(
+                    model=model,
+                    messages=clean_messages,
+                    stream=True,
+                    timeout=30
+                )
+            else:
+                response = g4f.ChatCompletion.create(
+                    model=model,
+                    messages=clean_messages,
+                    stream=False,
+                    timeout=30
+                )
+            
+            if response:
+                if stream:
+                    return response
+                else:
+                    response_str = str(response).strip()
+                    if response_str:
+                        return response_str
+                        
+        except Exception as e:
+            last_error = e
+            logger.error(f"Final attempt failed: {e}")
+        
+        # If everything failed
+        raise Exception(f"All providers failed. Last error: {last_error}")
+    
+    def generate_image(self, prompt: str, provider_name: str = None, model: str = None, size: str = "1024x1024", quality: str = "standard", n: int = 1):
+        """Generate image using g4f with fallback mechanism"""
+        
+        if not prompt or not prompt.strip():
+            raise ValueError("No prompt provided")
+        
+        # Clean prompt
+        prompt = prompt.strip()
+        
+        # Try specified provider first, then fallback to working providers
+        providers_to_try = []
+        if provider_name and provider_name in self.image_providers:
+            providers_to_try.append(provider_name)
+        
+        # Add working image providers as fallback
+        providers_to_try.extend([p for p in self.working_image_providers if p not in providers_to_try])
+        
+        # If no working providers, try all available image providers
+        if not providers_to_try:
+            providers_to_try = list(self.image_providers.keys())
+        
+        # Try providers one by one
+        last_error = None
+        for provider_name in providers_to_try:
+            try:
+                logger.info(f"Trying image provider: {provider_name}")
+                provider = getattr(g4f.Provider, provider_name)
+                
+                # Try different methods based on g4f version
+                response = None
+                
+                # Method 1: Using ImageGeneration class
+                if hasattr(g4f, 'ImageGeneration'):
+                    try:
+                        response = g4f.ImageGeneration.create(
+                            prompt=prompt,
+                            provider=provider,
+                            model=model,
+                            size=size,
+                            quality=quality,
+                            n=n,
+                            timeout=60
+                        )
+                    except Exception as e:
+                        logger.warning(f"Method 1 failed for {provider_name}: {e}")
+                
+                # Method 2: Using provider's create_image method
+                if not response and hasattr(provider, 'create_image'):
+                    try:
+                        response = provider.create_image(
+                            prompt=prompt,
+                            size=size,
+                            timeout=60
+                        )
+                    except Exception as e:
+                        logger.warning(f"Method 2 failed for {provider_name}: {e}")
+                
+                # Method 3: Using ChatCompletion with image request
+                if not response:
+                    try:
+                        image_request = f"Generate an image: {prompt}"
+                        response = g4f.ChatCompletion.create(
+                            model="dall-e" if "dall" in provider_name.lower() else "default",
+                            messages=[{"role": "user", "content": image_request}],
+                            provider=provider,
+                            image=True,
+                            timeout=60
+                        )
+                    except Exception as e:
+                        logger.warning(f"Method 3 failed for {provider_name}: {e}")
+                
+                # Process response
+                if response:
+                    # Handle different response types
+                    if isinstance(response, str):
+                        # Check if it's a URL
+                        if response.startswith(('http://', 'https://')):
+                            logger.info(f"Success with provider {provider_name}: got URL")
+                            return {'url': response, 'provider': provider_name}
+                        # Check if it's base64
+                        elif response.startswith('data:image'):
+                            logger.info(f"Success with provider {provider_name}: got base64")
+                            return {'base64': response, 'provider': provider_name}
+                        # Try to parse as JSON
+                        else:
+                            try:
+                                data = json.loads(response)
+                                if 'url' in data or 'data' in data or 'images' in data:
+                                    logger.info(f"Success with provider {provider_name}: got JSON")
+                                    return {'data': data, 'provider': provider_name}
+                            except:
+                                pass
+                    elif isinstance(response, dict):
+                        logger.info(f"Success with provider {provider_name}: got dict")
+                        return {'data': response, 'provider': provider_name}
+                    elif isinstance(response, list) and len(response) > 0:
+                        logger.info(f"Success with provider {provider_name}: got list")
+                        return {'data': response[0], 'provider': provider_name}
+                    
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Image provider {provider_name} failed: {e}")
+                continue
+        
+        # If everything failed
+        raise Exception(f"All image providers failed. Last error: {last_error}")
+    
+    def refresh_working_providers(self):
+        """Refresh the list of working providers"""
+        self.working_providers = self._test_providers()
+        self.working_image_providers = self._test_image_providers()
+        return {
+            'text_providers': self.working_providers,
+            'image_providers': self.working_image_providers
+        }
+
+# Initialize service
+gpt4free_service = GPT4FreeService()
+
+@app.route('/')
+def index():
+    """Main page"""
+    return render_template('index.html', 
+                         providers=gpt4free_service.providers,
+                         models=gpt4free_service.models,
+                         image_providers=gpt4free_service.image_providers,
+                         image_models=gpt4free_service.image_models)
+
+@app.route('/api/providers')
+def get_providers():
+    """Get available providers"""
+    return jsonify(gpt4free_service.providers)
+
+@app.route('/api/image-providers')
+def get_image_providers():
+    """Get available image providers"""
+    return jsonify(gpt4free_service.image_providers)
+
+@app.route('/api/image-models')
+def get_image_models():
+    """Get available image models"""
+    return jsonify(gpt4free_service.image_models)
+
+@app.route('/api/models')
+def get_models():
+    """Get available models"""
+    return jsonify(gpt4free_service.models)
+
+@app.route('/api/refresh-providers', methods=['POST'])
+def refresh_providers():
+    """Refresh working providers"""
+    try:
+        result = gpt4free_service.refresh_working_providers()
+        return jsonify({
+            'working_text_providers': result['text_providers'],
+            'working_image_providers': result['image_providers'],
+            'total_text_providers': len(gpt4free_service.providers),
+            'total_image_providers': len(gpt4free_service.image_providers)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/generate', methods=['POST'])
+def generate():
+    """Generate response from GPT4Free"""
+    try:
+        data = request.json
+        messages = data.get('messages', [])
+        provider_name = data.get('provider')
+        model_name = data.get('model')
+        stream = data.get('stream', False)
+        
+        if not messages:
+            return jsonify({'error': 'No messages provided'}), 400
+        
+        logger.info(f"Generate request: provider={provider_name}, model={model_name}, stream={stream}")
+        logger.info(f"Messages: {messages}")
+        
+        try:
+            if stream:
+                def generate_stream():
+                    try:
+                        response = gpt4free_service.generate_response(
+                            messages, provider_name, model_name, stream=True
+                        )
+                        
+                        # Handle streaming response
+                        content_sent = False
+                        for chunk in response:
+                            if chunk and str(chunk).strip():
+                                content_sent = True
+                                yield f"data: {json.dumps({'content': str(chunk)})}\n\n"
+                        
+                        if not content_sent:
+                            yield f"data: {json.dumps({'error': 'No content received from provider'})}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'done': True})}\n\n"
+                        
+                    except Exception as e:
+                        logger.error(f"Streaming error: {e}")
+                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                
+                return Response(
+                    generate_stream(),
+                    mimetype='text/event-stream',
+                    headers={
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'keep-alive',
+                        'X-Accel-Buffering': 'no'
+                    }
+                )
+            else:
+                response = gpt4free_service.generate_response(
+                    messages, provider_name, model_name, stream=False
+                )
+                
+                if response and str(response).strip():
+                    return jsonify({'response': str(response)})
+                else:
+                    return jsonify({'error': 'No response generated'}), 500
+                
+        except Exception as e:
+            logger.error(f"Generation error: {e}")
+            return jsonify({'error': f'Generation failed: {str(e)}'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error in generate endpoint: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/generate-image', methods=['POST'])
+def generate_image():
+    """Generate image from GPT4Free"""
+    try:
+        data = request.json
+        prompt = data.get('prompt', '').strip()
+        provider_name = data.get('provider')
+        model = data.get('model')
+        size = data.get('size', '1024x1024')
+        quality = data.get('quality', 'standard')
+        n = data.get('n', 1)
+        
+        if not prompt:
+            return jsonify({'error': 'No prompt provided'}), 400
+        
+        logger.info(f"Image generation request: provider={provider_name}, model={model}, prompt={prompt[:50]}...")
+        
+        try:
+            result = gpt4free_service.generate_image(
+                prompt=prompt,
+                provider_name=provider_name,
+                model=model,
+                size=size,
+                quality=quality,
+                n=n
+            )
+            
+            # Process result based on type
+            if 'url' in result:
+                # Return URL directly
+                return jsonify({
+                    'success': True,
+                    'url': result['url'],
+                    'provider': result['provider']
+                })
+            elif 'base64' in result:
+                # Return base64 data
+                return jsonify({
+                    'success': True,
+                    'base64': result['base64'],
+                    'provider': result['provider']
+                })
+            elif 'data' in result:
+                # Process complex data structure
+                data = result['data']
+                if isinstance(data, dict):
+                    if 'url' in data:
+                        return jsonify({
+                            'success': True,
+                            'url': data['url'],
+                            'provider': result['provider']
+                        })
+                    elif 'data' in data:
+                        return jsonify({
+                            'success': True,
+                            'base64': data['data'],
+                            'provider': result['provider']
+                        })
+                    elif 'images' in data and len(data['images']) > 0:
+                        return jsonify({
+                            'success': True,
+                            'url': data['images'][0].get('url') or data['images'][0].get('data'),
+                            'provider': result['provider']
+                        })
+                
+                # Fallback: return raw data
+                return jsonify({
+                    'success': True,
+                    'data': data,
+                    'provider': result['provider']
+                })
+            else:
+                return jsonify({'error': 'Invalid response format'}), 500
+                
+        except Exception as e:
+            logger.error(f"Image generation error: {e}")
+            return jsonify({'error': f'Image generation failed: {str(e)}'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error in generate-image endpoint: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/health')
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'text_providers_count': len(gpt4free_service.providers),
+        'image_providers_count': len(gpt4free_service.image_providers),
+        'models_count': len(gpt4free_service.models),
+        'image_models_count': len(gpt4free_service.image_models),
+        'working_text_providers': gpt4free_service.working_providers,
+        'working_image_providers': gpt4free_service.working_image_providers,
+        'working_text_count': len(gpt4free_service.working_providers),
+        'working_image_count': len(gpt4free_service.working_image_providers)
+    })
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
+
+if __name__ == '__main__':
+    # For local development
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
