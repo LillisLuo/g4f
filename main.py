@@ -241,35 +241,71 @@ class GPT4FreeService:
     
     def _get_image_models(self) -> Dict[str, Any]:
         """Get available image generation models"""
-        image_models = {
-            # ImageLabs models
-            'sdxl-turbo': {'name': 'SDXL Turbo', 'providers': ['ImageLabs']},
-            
-            # PollinationsImage models
+        image_models = {}
+        
+        # All image models from the table
+        model_list = {
+            # Flux models
             'flux': {'name': 'Flux', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together']},
             'flux-pro': {'name': 'Flux Pro', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together']},
             'flux-dev': {'name': 'Flux Dev', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together', 'HuggingSpace']},
             'flux-schnell': {'name': 'Flux Schnell', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together']},
-            'dall-e-3': {'name': 'DALL-E 3', 'providers': ['PollinationsImage', 'PollinationsAI', 'Copilot']},
-            'sdxl-turbo': {'name': 'SDXL Turbo', 'providers': ['PollinationsImage', 'PollinationsAI']},
-            'gpt-image': {'name': 'GPT Image', 'providers': ['PollinationsImage', 'PollinationsAI', 'ARTA']},
-            
-            # ARTA models
-            'sdxl-1.0': {'name': 'Stable Diffusion XL 1.0', 'providers': ['ARTA']},
-            'sdxl-l': {'name': 'Stable Diffusion XL Large', 'providers': ['ARTA']},
-            
-            # HuggingSpace models
-            'sd-3.5-large': {'name': 'Stable Diffusion 3.5 Large', 'providers': ['HuggingSpace']},
-            
-            # Together models
             'flux-redux': {'name': 'Flux Redux', 'providers': ['Together']},
             'flux-depth': {'name': 'Flux Depth', 'providers': ['Together']},
             'flux-canny': {'name': 'Flux Canny', 'providers': ['Together']},
             'flux-kontext-max': {'name': 'Flux Kontext Max', 'providers': ['Together']},
             'flux-dev-lora': {'name': 'Flux Dev LoRA', 'providers': ['Together']},
-            'flux-kontext-pro': {'name': 'Flux Kontext Pro', 'providers': ['Together']}
+            'flux-kontext-pro': {'name': 'Flux Kontext Pro', 'providers': ['Together']},
+            
+            # DALL-E models
+            'dall-e-3': {'name': 'DALL-E 3', 'providers': ['PollinationsImage', 'PollinationsAI', 'Copilot']},
+            
+            # Stable Diffusion models
+            'sdxl-turbo': {'name': 'SDXL Turbo', 'providers': ['ImageLabs', 'PollinationsImage', 'PollinationsAI']},
+            'sdxl-1.0': {'name': 'Stable Diffusion XL 1.0', 'providers': ['ARTA']},
+            'sdxl-l': {'name': 'Stable Diffusion XL Large', 'providers': ['ARTA']},
+            'sd-3.5-large': {'name': 'Stable Diffusion 3.5 Large', 'providers': ['HuggingSpace']},
+            
+            # Other models
+            'gpt-image': {'name': 'GPT Image', 'providers': ['PollinationsImage', 'PollinationsAI', 'ARTA']}
         }
+        
+        for model_id, model_info in model_list.items():
+            image_models[model_id] = {
+                'name': model_info['name'],
+                'providers': model_info['providers']
+            }
+        
         return image_models
+
+    
+    def _test_providers(self) -> List[str]:
+        """Test providers to see which ones are working"""
+        working = []
+        test_messages = [{"role": "user", "content": "Hi"}]
+        
+        for provider_name in self.providers.keys():
+            try:
+                provider = getattr(g4f.Provider, provider_name)
+                # Quick test
+                response = g4f.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=test_messages,
+                    provider=provider,
+                    stream=False,
+                    timeout=10
+                )
+                if response and len(str(response).strip()) > 0:
+                    working.append(provider_name)
+                    logger.info(f"Provider {provider_name} is working")
+                else:
+                    logger.warning(f"Provider {provider_name} returned empty response")
+            except Exception as e:
+                logger.warning(f"Provider {provider_name} test failed: {e}")
+                continue
+        
+        logger.info(f"Working providers: {working}")
+        return working
     
     def _test_image_providers(self) -> List[str]:
         """Test image providers to see which ones are working"""
