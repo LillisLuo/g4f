@@ -47,7 +47,7 @@ automatic_scaling:
   target_cpu_utilization: 0.6  # 降低一点以避免超载
   target_throughput_utilization: 0.6
   max_concurrent_requests: 30  # 减少以给图片生成更多资源
-  max_pending_latency: 30s     # 增加延迟容忍度
+  max_pending_latency: 15s     # 增加延迟容忍度
   # 图片生成需要更多时间
   max_idle_instances: 2
   min_pending_latency: 5s
