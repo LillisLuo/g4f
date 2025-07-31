@@ -1,30 +1,107 @@
+# runtime: python39
+
+# env_variables:
+#   SECRET_KEY: "your-secret-key-change-this-in-production"
+  
+# instance_class: F4
+
+# automatic_scaling:
+#   min_instances: 0
+#   max_instances: 20
+#   target_cpu_utilization: 0.7
+#   target_throughput_utilization: 0.7
+#   max_concurrent_requests: 50
+#   max_pending_latency: 15s
+
+# handlers:
+# - url: /static
+#   static_dir: static
+#   expiration: "1h"
+  
+# - url: /.*
+#   script: main.app
+#   secure: always
+
+# # Increased timeout and workers for image generation
+# entrypoint: gunicorn -b :$PORT main:app --timeout 600 --workers 4 --threads 2 --worker-class sync
+
+# # Optional: VPC connector if you need it
+# # vpc_access_connector:
+# #   name: projects/YOUR_PROJECT/locations/YOUR_REGION/connectors/YOUR_CONNECTOR
+
 runtime: python39
 
 env_variables:
   SECRET_KEY: "your-secret-key-change-this-in-production"
+  # 图片生成可能需要更长的超时时间
+  IMAGE_GENERATION_TIMEOUT: "120"
+  # 启用调试日志（生产环境中可以设为 false）
+  DEBUG_LOGGING: "true"
   
-instance_class: F4
+# 升级实例类型以支持图片生成的内存需求
+instance_class: F4_1G
 
 automatic_scaling:
   min_instances: 0
   max_instances: 20
-  target_cpu_utilization: 0.7
-  target_throughput_utilization: 0.7
-  max_concurrent_requests: 50
-  max_pending_latency: 15s
+  target_cpu_utilization: 0.6  # 降低一点以避免超载
+  target_throughput_utilization: 0.6
+  max_concurrent_requests: 30  # 减少以给图片生成更多资源
+  max_pending_latency: 30s     # 增加延迟容忍度
+  # 图片生成需要更多时间
+  max_idle_instances: 2
+  min_pending_latency: 5s
 
 handlers:
 - url: /static
   static_dir: static
   expiration: "1h"
   
+- url: /favicon\.ico
+  static_files: static/favicon.ico
+  upload: static/favicon\.ico
+  expiration: "7d"
+  
 - url: /.*
   script: main.app
   secure: always
 
-# Increased timeout and workers for image generation
-entrypoint: gunicorn -b :$PORT main:app --timeout 600 --workers 4 --threads 2 --worker-class sync
+# 针对图片生成优化的 entrypoint
+# 增加超时时间到 10 分钟，减少 worker 数量但增加内存
+entrypoint: gunicorn -b :$PORT main:app --timeout 600 --workers 2 --threads 4 --worker-class sync --worker-connections 1000 --max-requests 1000 --max-requests-jitter 100 --preload
 
-# Optional: VPC connector if you need it
+# 资源限制 - 图片生成需要更多内存
+resources:
+  cpu: 1
+  memory_gb: 2
+  disk_size_gb: 10
+
+# 健康检查配置
+readiness_check:
+  path: "/api/health"
+  check_interval_sec: 10
+  timeout_sec: 10
+  failure_threshold: 3
+  success_threshold: 2
+  app_start_timeout_sec: 300
+
+liveness_check:
+  path: "/api/health"
+  check_interval_sec: 30
+  timeout_sec: 10
+  failure_threshold: 4
+  success_threshold: 2
+
+# 如果需要访问外部 API（图片生成服务）
 # vpc_access_connector:
 #   name: projects/YOUR_PROJECT/locations/YOUR_REGION/connectors/YOUR_CONNECTOR
+
+# 如果需要静态 IP
+# network:
+#   name: default
+#   subnetwork_name: default
+
+# Beta features - 如果需要更多控制
+beta_settings:
+  # 启用云日志
+  cloud_sql_instances: []
