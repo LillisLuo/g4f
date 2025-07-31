@@ -850,8 +850,8 @@ class GPT4FreeService:
         try:
             # 基于最新文档的图片生成提供商
             image_provider_list = [
-                'BingCreateImages', 'OpenaiChat', 'Gemini', 'PollinationsAI', 
-                'Flux', 'HuggingSpace', 'Together'
+                'ImageLabs', 'PollinationsImage', 'ARTA', 'HuggingSpace',
+                'PollinationsAI', 'Together'
             ]
             
             for provider_name in image_provider_list:
@@ -1030,19 +1030,28 @@ class GPT4FreeService:
         # 基于最新文档的图片模型
         model_list = {
             # Flux models
-            'flux': {'name': 'Flux', 'providers': ['PollinationsAI', 'Together', 'HuggingSpace']},
-            'flux-pro': {'name': 'Flux Pro', 'providers': ['PollinationsAI', 'Together']},
-            'flux-dev': {'name': 'Flux Dev', 'providers': ['PollinationsAI', 'Together', 'HuggingSpace']},
-            'flux-schnell': {'name': 'Flux Schnell', 'providers': ['PollinationsAI', 'Together']},
+            'flux': {'name': 'Flux', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together']},
+            'flux-pro': {'name': 'Flux Pro', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together']},
+            'flux-dev': {'name': 'Flux Dev', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together', 'HuggingSpace']},
+            'flux-schnell': {'name': 'Flux Schnell', 'providers': ['PollinationsImage', 'PollinationsAI', 'Together']},
+            'flux-redux': {'name': 'Flux Redux', 'providers': ['Together']},
+            'flux-depth': {'name': 'Flux Depth', 'providers': ['Together']},
+            'flux-canny': {'name': 'Flux Canny', 'providers': ['Together']},
+            'flux-kontext-max': {'name': 'Flux Kontext Max', 'providers': ['Together']},
+            'flux-dev-lora': {'name': 'Flux Dev LoRA', 'providers': ['Together']},
+            'flux-kontext-pro': {'name': 'Flux Kontext Pro', 'providers': ['Together']},
             
             # DALL-E models
-            'dalle-3': {'name': 'DALL-E 3', 'providers': ['BingCreateImages', 'OpenaiChat']},
+            'dall-e-3': {'name': 'DALL-E 3', 'providers': ['PollinationsImage', 'PollinationsAI', 'Copilot']},
             
-            # GPT Image
-            'gpt-image': {'name': 'GPT Image', 'providers': ['PollinationsAI']},
+            # Stable Diffusion models
+            'sdxl-turbo': {'name': 'SDXL Turbo', 'providers': ['ImageLabs', 'PollinationsImage', 'PollinationsAI']},
+            'sdxl-1.0': {'name': 'Stable Diffusion XL 1.0', 'providers': ['ARTA']},
+            'sdxl-l': {'name': 'Stable Diffusion XL Large', 'providers': ['ARTA']},
+            'sd-3.5-large': {'name': 'Stable Diffusion 3.5 Large', 'providers': ['HuggingSpace']},
             
-            # Bing
-            'bing': {'name': 'Bing Image Creator', 'providers': ['BingCreateImages']},
+            # Other models
+            'gpt-image': {'name': 'GPT Image', 'providers': ['PollinationsImage', 'PollinationsAI', 'ARTA']}
         }
         
         for model_id, model_info in model_list.items():
