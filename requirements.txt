@@ -1,14 +1,52 @@
+# Flask 和 Web 服务器
 Flask==2.3.3
-g4f>=0.3.1.9
 gunicorn==21.2.0
+Werkzeug>=2.3.0
+
+# GPT4Free 核心 - 更新到最新版本以支持新的 Client API
+g4f>=0.3.1.9
+
+# 异步和网络请求
 requests>=2.31.0
 nest-asyncio>=1.5.8
-python-dotenv>=1.0.0
-Pillow>=10.0.0
 aiohttp>=3.8.5
 asyncio>=3.4.3
-beautifulsoup4>=4.12.2
-browser-cookie3>=0.19.1
 websockets>=11.0.3
-pyexecjs>=1.5.1
+
+# 图像处理 - 重要：图片生成功能需要
+Pillow>=10.0.0
+
+# 网页解析和搜索
+beautifulsoup4>=4.12.2
 duckduckgo-search>=5.0
+
+# 浏览器相关 - 某些提供商需要
+browser-cookie3>=0.19.1
+pyexecjs>=1.5.1
+
+# 环境配置
+python-dotenv>=1.0.0
+
+# 新增：图片生成相关依赖
+# 如果需要本地图片模型支持
+# transformers>=4.30.0
+# torch>=2.0.0
+# torchvision>=0.15.0
+
+# 如果需要更好的图片处理
+numpy>=1.24.0
+io-base64>=0.1.0
+
+# 如果需要 webdriver 支持（某些图片提供商可能需要）
+# selenium>=4.15.0
+# webdriver-manager>=4.0.0
+
+# 如果需要代理支持
+# aiohttp-socks>=0.8.0
+
+# 安全和性能
+cryptography>=41.0.0
+urllib3>=2.0.0
+
+# 日志和调试
+colorama>=0.4.6
